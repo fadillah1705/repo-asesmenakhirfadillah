@@ -5,6 +5,18 @@ if (session_status() === PHP_SESSION_NONE) {
     session_start();
 }
 
+// --- 1. FITUR BARU: NAVIGASI DASHBOARD DINAMIS ---
+$link_dashboard = "login.php"; 
+if (isset($_SESSION['role'])) {
+    if ($_SESSION['role'] === 'pembina' || $_SESSION['role'] === 'admin') {
+        $link_dashboard = "dashboard.php";
+    } else {
+        $link_dashboard = "dashboard_guru.php";
+    }
+}
+
+$nama_user = $_SESSION['nama_lengkap'] ?? $_SESSION['nama'] ?? 'User';
+
 function getHariIni() {
     $hari = date('D');
     $map = ['Sun'=>'Minggu','Mon'=>'Senin','Tue'=>'Selasa','Wed'=>'Rabu','Thu'=>'Kamis','Fri'=>'Jumat','Sat'=>'Sabtu'];
@@ -12,7 +24,7 @@ function getHariIni() {
 }
 $hari_sekarang = getHariIni();
 
-// --- LOGIKA STATISTIK ---
+// --- STATISTIK ---
 $q_total = "SELECT COUNT(*) as total FROM jadwal WHERE hari = '$hari_sekarang'";
 $total_tugas = mysqli_fetch_assoc(mysqli_query($conn, $q_total))['total'] ?? 0;
 $q_hadir = "SELECT COUNT(*) as total FROM jurnal WHERE tanggal = CURDATE() AND status_hadir = 'Hadir'";
@@ -34,17 +46,14 @@ function renderAgendaCards($conn, $gender) {
         while($row = mysqli_fetch_assoc($res)) {
             $nama = ucwords(strtolower($row['nama_lengkap'] ?? 'Tanpa Nama'));
             $status = $row['status_hadir'] ?? 'Belum Absen';
-            
-            // Warna Ikon Kelas (Hijau untuk Ikhwan, Merah Tua untuk Akhwat)
             $icon_bg = ($gender == 'L') ? '#010d58' : '#831843';
             
-            // Logika Warna Status Badge (Sesuai Gambar)
             if($status == 'Hadir') {
                 $st_style = "background: #dcfce7; color: #151e80;";
             } elseif($status == 'Belum Absen') {
                 $st_style = "background: #f1f5f9; color: #64748b;";
             } else {
-                $st_style = "background: #fef3c7; color: #b40909;"; // Warna Izin/Sakit
+                $st_style = "background: #fef3c7; color: #b40909;";
             }
             
             echo "
@@ -65,7 +74,7 @@ function renderAgendaCards($conn, $gender) {
         echo "<div class='text-center text-muted py-5'>Tidak ada agenda untuk hari ini.</div>"; 
     }
 }
-// --- 2. RENDER MATRIKS PEKANAN ---
+
 function renderMatriksGrid($conn, $gender) {
     $hari_list = ['Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu', 'Minggu'];
     $kelas_list = ['X', 'XI', 'XII'];
@@ -94,7 +103,6 @@ function renderMatriksGrid($conn, $gender) {
             if ($d = mysqli_fetch_assoc($res)) {
                 $singkat = explode(' ', $d['nama_lengkap'])[0];
                 $jid = $d['id'];
-                
                 $q_mat = "SELECT materi FROM jurnal WHERE jadwal_id = '$jid' AND status_hadir = 'Hadir' ORDER BY tanggal DESC LIMIT 1";
                 $res_mat = mysqli_query($conn, $q_mat);
                 $materi_last = (mysqli_num_rows($res_mat) > 0) ? mysqli_fetch_assoc($res_mat)['materi'] : "-";
@@ -111,22 +119,19 @@ function renderMatriksGrid($conn, $gender) {
     echo "</tbody></table></div>";
 }
 
-// --- 3. RENDER JURNAL ---
 function renderRiwayat($conn, $gender) {
     $query = "SELECT jr.*, j.mapel, j.kelas FROM jurnal jr JOIN jadwal j ON jr.jadwal_id = j.id WHERE j.gender = '$gender' ORDER BY jr.tanggal DESC";
     $res = mysqli_query($conn, $query);
     $sfx = ($gender == 'L') ? 'ikhwan' : 'akhwat';
-    $title = ($gender == 'L') ? 'PUTRA (IKHWAN)' : 'PUTRI (AKHWAT)';
     
     echo "<div class='print-area-wrapper'>
-            <h3 class='print-header'>JURNAL KEHADIRAN KAJIAN - $title</h3>
             <div class='table-responsive mt-2'>
                 <table class='log-table'>
                     <thead>
                         <tr class='header-minimal'>
                             <th width='30'>NO</th>
                             <th width='110'>TANGGAL</th>
-                            <th>KAJIAN & MATERI</th>
+                            <th>KAJIAN & MATERI / ALASAN</th>
                             <th width='95' class='text-center'>STATUS</th>
                         </tr>
                     </thead>
@@ -135,12 +140,21 @@ function renderRiwayat($conn, $gender) {
     while($row = mysqli_fetch_assoc($res)) {
         $st = $row['status_hadir'];
         $pill = ($st == 'Hadir') ? 'st-hadir' : (($st == 'Izin' || $st == 'Sakit') ? 'st-izin' : 'st-absen');
+        
+        $info_tambahan = "";
+        if ($st == 'Hadir') {
+            $info_tambahan = "<div class='materi-box-jurnal'><strong>Materi:</strong> {$row['materi']}</div>";
+        } elseif ($st == 'Izin' || $st == 'Sakit') {
+            $alasan = !empty($row['keterangan']) ? $row['keterangan'] : "Tidak ada alasan spesifik";
+            $info_tambahan = "<div class='alasan-box-jurnal'><strong>Alasan:</strong> $alasan</div>";
+        }
+
         echo "<tr data-tgl='{$row['tanggal']}'>
                 <td class='text-center text-muted' style='font-size: 0.85rem;'>$no</td>
                 <td class='fw-bold' style='font-size: 0.9rem;'>".date('d/m/Y', strtotime($row['tanggal']))."</td>
                 <td>
                     <div class='mapel-title-jurnal'>{$row['mapel']} (Kelas {$row['kelas']})</div>
-                    ".($st == 'Hadir' ? "<div class='materi-box-jurnal'>{$row['materi']}</div>" : "")."
+                    $info_tambahan
                 </td>
                 <td class='text-center'><span class='status-pill $pill'>$st</span></td>
               </tr>";
@@ -158,175 +172,133 @@ function renderRiwayat($conn, $gender) {
     <title>MAKN Monitor | Sistem Informasi Kajian</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
     <style>
         :root { --primary: #0f172a; --accent: #1037b9; --bg: #f8fcf9; --border: #e2f0e5; }
         body { background-color: var(--bg); font-family: 'Plus Jakarta Sans', sans-serif; color: #1e223b; }
-        
         .header-nav { padding: 15px 0; display: flex; justify-content: space-between; align-items: center; }
         .hero-section h1 { font-weight: 800; font-size: 2rem; color: var(--primary); letter-spacing: -1px; }
-
         .stats-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 15px; margin-bottom: 30px; }
         .stat-card { background: white; border: 1px solid var(--border); border-radius: 16px; padding: 15px; text-align: center; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05); }
         .stat-card h3 { font-size: 2rem; font-weight: 800; margin: 0; color: var(--primary); }
-
-        /* AGENDA CARD - TAMPILAN BARU */
-        .agenda-container-card {
-            background: white; border: 1px solid var(--border); border-radius: 20px;
-            padding: 20px; min-height: 250px; position: relative; overflow: hidden;
-        }
-        .agenda-card-img-style {
-            background: white; border: 1px solid #f1f5f9; border-radius: 12px;
-            padding: 12px; margin-bottom: 12px; display: flex; align-items: center;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.02);
-        }
-        .class-box-icon {
-            width: 42px; height: 42px; border-radius: 8px; color: white;
-            display: flex; align-items: center; justify-content: center;
-            font-weight: 800; font-size: 1rem; margin-right: 15px; flex-shrink: 0;
-        }
+        .agenda-card-img-style { background: white; border: 1px solid #f1f5f9; border-radius: 12px; padding: 12px; margin-bottom: 12px; display: flex; align-items: center; box-shadow: 0 2px 4px rgba(0,0,0,0.02); }
+        .class-box-icon { width: 42px; height: 42px; border-radius: 8px; color: white; display: flex; align-items: center; justify-content: center; font-weight: 800; font-size: 1rem; margin-right: 15px; flex-shrink: 0; }
         .agenda-details-mid { flex-grow: 1; }
         .mapel-text { font-weight: 700; font-size: 0.95rem; color: #1e293b; line-height: 1.2; }
         .teacher-text { font-size: 0.8rem; color: #94a3b8; margin-top: 2px; }
-        .status-badge-right {
-            font-size: 0.65rem; font-weight: 700; padding: 4px 10px;
-            border-radius: 20px; text-transform: capitalize; white-space: nowrap;
-        }
-        /* HEADER JURNAL KECIL (0.65rem) */
-        .header-minimal th {
-            font-size: 0.65rem !important;
-            font-weight: 800 !important;
-            text-transform: uppercase !important;
-            color: #64748b;
-            padding: 10px !important;
-            border-bottom: 2px solid var(--border) !important;
-        }
-
+        .status-badge-right { font-size: 0.65rem; font-weight: 700; padding: 4px 10px; border-radius: 20px; text-transform: capitalize; white-space: nowrap; }
         .nav-pills-custom { background: #e2e8f0; padding: 4px; border-radius: 10px; display: inline-flex; }
         .nav-pills-custom .nav-link { border: none; border-radius: 8px; color: #64748b; font-weight: 700; font-size: 0.85rem; padding: 6px 20px; }
         .nav-pills-custom .nav-link.active { background: white; color: var(--primary); box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
-
         .matrix-table { width: 100%; border-collapse: separate; border-spacing: 0; border: 1px solid var(--border); border-radius: 12px; overflow: hidden; background: white; }
         .matrix-table th { background: #f1f5f9; padding: 12px; font-size: 0.75rem; font-weight: 800; text-align: center; border-bottom: 2px solid var(--border); border-right: 1px solid var(--border); }
-        .matrix-table td { padding: 12px 8px; border-right: 1px solid #e2e8f0; border-bottom: 1px solid #e2e8f0; text-align: center; vertical-align: middle; }
-        .matrix-label { background: #f8fafc !important; font-weight: 800; color: var(--primary); font-size: 0.8rem; border-right: 2px solid var(--border) !important; }
+        .matrix-table td { padding: 12px 8px; border-right: 1px solid #e2e8f0; border-bottom: 1px solid #e2e8f0; text-align: center; vertical-align: middle; min-width: 100px; }
+        .matrix-label { background: #f8fafc !important; font-weight: 800; color: var(--primary); font-size: 0.8rem; border-right: 2px solid var(--border) !important; min-width: 100px !important; position: sticky; left: 0; z-index: 2; }
         .cell-mapel { font-weight: 700; font-size: 0.85rem; color: var(--primary); }
         .cell-guru { font-size: 0.75rem; color: var(--accent); font-weight: 700; margin-top: 2px; }
         .cell-materi { font-size: 0.6rem; color: #94a3b8; font-style: italic; margin-top: 4px; }
         .today-head { background: var(--primary) !important; color: white !important; }
-
         .log-table { width: 100%; border-collapse: separate; border-spacing: 0 8px; }
         .log-table td { background: white; padding: 15px; border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); vertical-align: middle; }
         .log-table tr td:first-child { border-left: 1px solid var(--border); border-radius: 10px 0 0 10px; }
         .log-table tr td:last-child { border-right: 1px solid var(--border); border-radius: 0 10px 10px 0; }
         .mapel-title-jurnal { font-weight: 700; font-size: 0.95rem; color: var(--primary); }
-        .materi-box-jurnal { font-size: 0.85rem; color: #475569; margin-top: 5px; padding-left: 10px; border-left: 3px solid var(--accent); }
+        .materi-box-jurnal { font-size: 0.8rem; color: #475569; margin-top: 5px; padding-left: 10px; border-left: 3px solid var(--accent); }
+        .alasan-box-jurnal { font-size: 0.8rem; color: #991b1b; margin-top: 5px; padding: 5px 10px; background: #fef2f2; border-radius: 6px; border-left: 3px solid #dc2626; }
         .status-pill { padding: 4px 12px; border-radius: 6px; font-size: 0.75rem; font-weight: 800; text-transform: uppercase; display: inline-block; min-width: 90px; }
         .st-hadir { background: #dce3fc; color: #091d8d; }
         .st-izin { background: #fec7c7; color: #900000; }
         .st-absen { background: #fee2e2; color: #b91c1c; }
+        .marquee-strict-align { width: 100%; overflow: hidden; white-space: nowrap; margin-top: 5px; margin-bottom: 20px; }
+        .text-emerging-right { display: inline-block; animation: jalan-mulus 40s linear infinite; font-weight: 700; color: #64748b; font-size: 0.95rem; padding-left: 100%; }
+        @keyframes jalan-mulus { 0% { transform: translateX(0); } 100% { transform: translateX(-100%); } }
+        .fade-in-page { animation: fadeIn 1.2s ease-out forwards; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(15px); } to { opacity: 1; transform: translateY(0); } }
 
-        .print-header { display: none; text-align: center; font-weight: 800; border-bottom: 2px solid #000; padding-bottom: 10px; margin-bottom: 20px; }
+        /* --- MEDIA QUERIES UNTUK HP --- */
+        @media (max-width: 768px) {
+            .hero-section h1 { font-size: 1.5rem; text-align: center; }
+            .stats-row { grid-template-columns: repeat(2, 1fr); }
+            .stats-row div:last-child { grid-column: span 2; }
+            .stat-card h3 { font-size: 1.5rem; }
+            .agenda-card-img-style { padding: 10px; }
+            .class-box-icon { width: 35px; height: 35px; font-size: 0.8rem; margin-right: 10px; }
+            .mapel-text { font-size: 0.85rem; }
+            .status-badge-right { font-size: 0.6rem; padding: 3px 8px; }
+            .nav-pills-custom .nav-link { padding: 6px 10px; font-size: 0.75rem; }
+            
+            /* Agar Header Jurnal & Jadwal Seminggu tidak pecah */
+            div[style*="width:280px"] { width: 220px !important; font-size: 0.9rem !important; height: 40px !important; }
+            div[style*="width: 160px"] { width: 140px !important; font-size: 0.7rem !important; }
 
-        @media print {
-            .no-print { display: none !important; }
-            .print-header { display: block !important; }
-            .log-table td, .log-table th { border: 1px solid #000 !important; border-radius: 0 !important; padding: 8px !important; color: #000 !important; }
-            .status-pill { background: transparent !important; border: 1px solid #000; color: #000 !important; }
+            /* Tabel Responsif agar bisa di scroll */
+            .table-responsive { border-radius: 12px; border: 1px solid var(--border); }
+            .log-table td { padding: 10px; font-size: 0.8rem; }
+            .mapel-title-jurnal { font-size: 0.85rem; }
+            .status-pill { min-width: 70px; font-size: 0.65rem; }
+            
+            /* Kontrol filter tanggal & tombol cetak di HP */
+            .d-flex.gap-2.no-print { flex-direction: column; width: 100%; }
+            #filterTgl { width: 100% !important; }
         }
-        /* Container pembungkus utama */
-.header-wrapper {
-    display: flex;
-    flex-direction: column; /* Mengatur elemen ke bawah (vertikal) */
-    align-items: center;    /* Mengetengahkan elemen */
-    gap: 15px;              /* Jarak antara judul dan tab agar tidak berdempetan */
-    margin-bottom: 25px;    /* Jarak ke konten di bawahnya */
-    width: 100%;
-}
 
-/* Kotak Judul */
-.judul-full {
-    width: 100%;            /* Lebar penuh */
-    background: white;
-    border: 2px solid #64748b;
-    border-radius: 12px;
-    padding: 12px;
-    font-weight: 800;
-    font-size: 1.1rem;
-    text-align: center;
-    color: #1e293b;
-    text-transform: uppercase;
-    box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05);
-}
-
-/* Styling Tab Navigasi agar rapi di bawah */
-.nav-pills-custom {
-    background: #e2e8f0;
-    padding: 5px;
-    border-radius: 10px;
-    display: inline-flex;
-    gap: 5px;
-}
-
-@media (max-width: 576px) {
-    .judul-full {
-        font-size: 0.9rem; /* Ukuran teks lebih kecil sedikit di HP */
-    }
-    
-    .nav-pills-custom {
-        width: 100%; /* Tab memenuhi lebar layar di HP */
-    }
-    
-    .nav-pills-custom .nav-link {
-        flex: 1; /* Tombol Putra & Putri membagi ruang sama rata */
-    }
-}
+        @media print { .no-print { display: none !important; } .print-header { display: block !important; } }
     </style>
 </head>
-<body>
+<body class="fade-in-page">
 
 <div class="container py-3">
     <nav class="header-nav no-print">
         <div class="fw-800 text-dark">MAKN MONITORING</div>
-        <a href="login.php" class="btn btn-dark btn-sm rounded-pill px-4 fw-bold">MASUK</a>
+        <div class="d-flex align-items-center gap-3">
+            <a href="<?= $link_dashboard ?>" class="btn btn-primary btn-sm rounded-pill px-4 fw-bold shadow-sm">
+                <i class="fas fa-th-large me-1"></i> DASHBOARD
+            </a>
+        </div>
     </nav>
 
     <header class="hero-section no-print mb-4">
-        <h1>Sistem Informasi Kajian MAKN</h1>
-        <div class="fw-700 text-muted">Jadwal dan Jurnal Kehadiran Guru Kajian Real-time.</div>
+        <h1 class="fw-800">Sistem Informasi Kajian MAKN</h1>
+        <div class="marquee-strict-align">
+            <div class="text-emerging-right">
+                <i class="fas fa-info-circle me-2" style="color: var(--accent);"></i> 
+                Selamat datang di Sistem Jadwal dan Jurnal Kehadiran Guru Kajian. Silakan mengisi kehadiran serta jurnal kajian secara real-time.
+            </div>
+        </div>
     </header>
 
     <div class="stats-row no-print mb-4">
-        <div class="stat-card"><h3><?= $hadir ?></h3><p class="small fw-bold text-muted">Hadir</p></div>
-        <div class="stat-card"><h3><?= $izin ?></h3><p class="small fw-bold text-muted">Izin/Sakit</p></div>
-        <div class="stat-card"><h3><?= $pending ?></h3><p class="small fw-bold text-muted">Pending</p></div>
+        <div class="stat-card"><h3><?= $hadir ?></h3><p class="small fw-bold text-muted">Hadir Hari Ini</p></div>
+        <div class="stat-card"><h3><?= $izin ?></h3><p class="small fw-bold text-muted">Izin Hari Ini</p></div>
+        <div class="stat-card"><h3><?= $pending ?></h3><p class="small fw-bold text-muted">Belum Absen</p></div>
     </div>
-<br><br>
+
     <div class="row g-3 mb-5 no-print">
         <div class="col-md-6">
             <div class="mb-3">
-    <div class="fw-800 fw-bold border border-primary shadow-sm text-center d-flex align-items-center justify-content-center" 
-         style="width: 160px; height: 35px; border-radius: 6px; font-size: 0.8rem; background-color: white; color: #0d6efd; text-transform: uppercase; letter-spacing: 0.5px; border-width: 1.5px !important;">
-        AGENDA PUTRA
-    </div>
-</div>
+                <div class="fw-800 fw-bold border border-primary shadow-sm text-center d-flex align-items-center justify-content-center" 
+                     style="width: 160px; height: 35px; border-radius: 6px; font-size: 0.8rem; background-color: white; color: #0d6efd; text-transform: uppercase; border-width: 1.5px !important;">
+                    JADWAL HARI INI (PA)
+                </div>
+            </div>
             <?php renderAgendaCards($conn, 'L'); ?>
         </div>
         <div class="col-md-6">
             <div class="mb-3">
-    <div class="fw-800 fw-bold border border-danger shadow-sm text-center d-flex align-items-center justify-content-center" 
-         style="width: 160px; height: 35px; border-radius: 6px; font-size: 0.8rem; background-color: white; color: #dc3545; text-transform: uppercase; letter-spacing: 0.5px; border-width: 1.5px !important;">
-        AGENDA PUTRI
-    </div>
-</div>
+                <div class="fw-800 fw-bold border border-danger shadow-sm text-center d-flex align-items-center justify-content-center" 
+                     style="width: 160px; height: 35px; border-radius: 6px; font-size: 0.8rem; background-color: white; color: #dc3545; text-transform: uppercase; border-width: 1.5px !important;">
+                    JADWAL HARI INI (PI)
+                </div>
+            </div>
             <?php renderAgendaCards($conn, 'P'); ?>
         </div>
     </div>
 
-    <div class="d-flex align-items-center justify-content-between mb-3 no-print">
+    <div class="d-flex align-items-center justify-content-between mb-3 no-print flex-wrap gap-2">
         <div class="fw-800 m-0 fw-bold border border-secondary shadow-sm text-center d-flex align-items-center justify-content-center" 
-         style="width:280px; height:50px; border-radius:10px; font-size:1.1rem; background-color: white; color: #343a40; text-transform: uppercase; letter-spacing: 0.5px;">
-        JADWAL KAJIAN SEMINGGU
-    </div>
+             style="width:280px; height:50px; border-radius:10px; font-size:1.1rem; background-color: white; color: #343a40; text-transform: uppercase;">
+            JADWAL KAJIAN SEMINGGU
+        </div>
         <div class="nav nav-pills nav-pills-custom">
             <button class="nav-link active" data-bs-toggle="pill" data-bs-target="#matL">Putra</button>
             <button class="nav-link" data-bs-toggle="pill" data-bs-target="#matP">Putri</button>
@@ -337,17 +309,17 @@ function renderRiwayat($conn, $gender) {
         <div class="tab-pane fade" id="matP"><?php renderMatriksGrid($conn, 'P'); ?></div>
     </div>
 
-    <div class="d-flex align-items-center justify-content-between mb-3">
+    <div class="d-flex align-items-center justify-content-between mb-3 flex-wrap gap-2">
         <div class="fw-800 m-0 fw-bold border border-secondary shadow-sm text-center d-flex align-items-center justify-content-center" 
-         style="width:280px; height:50px; border-radius:10px; font-size:1.1rem; background-color: white; color: #343a40; text-transform: uppercase; letter-spacing: 0.5px;">
-        JURNAL KAJIAN HARIAN
-    </div>
-        <div class="d-flex gap-2 no-print">
+             style="width:280px; height:50px; border-radius:10px; font-size:1.1rem; background-color: white; color: #343a40; text-transform: uppercase;">
+            JURNAL KAJIAN HARIAN
+        </div>
+        <div class="d-flex gap-2 no-print align-items-center">
             <input type="date" id="filterTgl" class="form-control form-control-sm fw-bold border-secondary shadow-sm" style="width:130px; border-radius:8px" onchange="filterSemua()">
             <button class="btn btn-outline-dark btn-sm fw-bold px-3" style="border-radius:8px" onclick="window.print()">CETAK</button>
         </div>
     </div>
-    
+
     <div class="nav nav-pills nav-pills-custom no-print mb-3">
         <button class="nav-link active" data-bs-toggle="pill" data-bs-target="#jurL">Putra</button>
         <button class="nav-link" data-bs-toggle="pill" data-bs-target="#jurP">Putri</button>
