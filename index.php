@@ -120,6 +120,7 @@ function renderMatriksGrid($conn, $gender) {
 }
 
 function renderRiwayat($conn, $gender) {
+    // Query tetap sama, pastikan kolom 'materi' ikut terpanggil
     $query = "SELECT jr.*, j.mapel, j.kelas FROM jurnal jr JOIN jadwal j ON jr.jadwal_id = j.id WHERE j.gender = '$gender' ORDER BY jr.tanggal DESC";
     $res = mysqli_query($conn, $query);
     $sfx = ($gender == 'L') ? 'ikhwan' : 'akhwat';
@@ -142,10 +143,14 @@ function renderRiwayat($conn, $gender) {
         $pill = ($st == 'Hadir') ? 'st-hadir' : (($st == 'Izin' || $st == 'Sakit') ? 'st-izin' : 'st-absen');
         
         $info_tambahan = "";
+        
+        // LOGIKA BARU: Jika Hadir tampilkan sebagai Materi, jika Izin tampilkan sebagai Alasan
         if ($st == 'Hadir') {
-            $info_tambahan = "<div class='materi-box-jurnal'><strong>Materi:</strong> {$row['materi']}</div>";
+            $materi = !empty($row['materi']) ? $row['materi'] : "<span class='text-muted'>Materi belum diisi</span>";
+            $info_tambahan = "<div class='materi-box-jurnal'><strong>Materi:</strong> $materi</div>";
         } elseif ($st == 'Izin' || $st == 'Sakit') {
-            $alasan = !empty($row['keterangan']) ? $row['keterangan'] : "Tidak ada alasan spesifik";
+            // Kita mengambil data dari kolom 'materi' karena tadi kita simpan alasan di sana
+            $alasan = !empty($row['materi']) ? $row['materi'] : "Tidak ada alasan spesifik";
             $info_tambahan = "<div class='alasan-box-jurnal'><strong>Alasan:</strong> $alasan</div>";
         }
 

@@ -31,25 +31,38 @@ if (isset($_POST['update_profil'])) {
 }
 
 // --- 4. LOGIKA SIMPAN (KEHADIRAN & JURNAL) ---
+// --- 4. LOGIKA SIMPAN (KEHADIRAN & JURNAL) ---
 if (isset($_POST['simpan_laporan'])) {
     $jadwal_id = $_POST['jadwal_id'];
     $status = $_POST['status']; 
-    $materi = isset($_POST['jurnal']) ? mysqli_real_escape_string($conn, $_POST['jurnal']) : '';
-    $alasan = isset($_POST['alasan']) ? mysqli_real_escape_string($conn, $_POST['alasan']) : '';
     $tgl = date('Y-m-d');
-
-    if($status == 'Izin') { $materi = $alasan; }
     
+    // Inisialisasi materi
+    $materi = '';
+
+    if ($status == 'Izin') {
+        // Jika izin, ambil dari input 'alasan'
+        $materi = isset($_POST['alasan']) ? mysqli_real_escape_string($conn, $_POST['alasan']) : 'Izin tanpa alasan';
+    } else {
+        // Jika hadir, ambil dari input 'jurnal'
+        $materi = isset($_POST['jurnal']) ? mysqli_real_escape_string($conn, $_POST['jurnal']) : '';
+    }
+    
+    // Cek apakah sudah ada data untuk jadwal ini di tanggal ini
     $cek_query = mysqli_query($conn, "SELECT id FROM jurnal WHERE jadwal_id='$jadwal_id' AND tanggal='$tgl'");
     
-    if(mysqli_num_rows($cek_query) > 0) {
+    if (mysqli_num_rows($cek_query) > 0) {
+        // Update jika sudah ada (misal: tadi izin terus berubah jadi hadir, atau sebaliknya)
         $sql_aksi = "UPDATE jurnal SET status_hadir='$status', materi='$materi' WHERE jadwal_id='$jadwal_id' AND tanggal='$tgl'";
     } else {
+        // Simpan data baru
         $sql_aksi = "INSERT INTO jurnal (jadwal_id, tanggal, status_hadir, materi) VALUES ('$jadwal_id', '$tgl', '$status', '$materi')";
     }
 
-    if(mysqli_query($conn, $sql_aksi)) {
+    if (mysqli_query($conn, $sql_aksi)) {
         $swal_msg = ['icon' => 'success', 'title' => 'Berhasil!', 'text' => 'Laporan telah disimpan.'];
+    } else {
+        $swal_msg = ['icon' => 'error', 'title' => 'Gagal!', 'text' => 'Terjadi kesalahan sistem.'];
     }
 }
 
